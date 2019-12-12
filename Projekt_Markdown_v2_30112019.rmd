@@ -1,0 +1,155 @@
+---
+title: "Analysetechniken"
+subtitle: "Defibrillatoren in Wien - heute und in 20 Jahren"
+author: "Petra Huber, Robert Degasperi, Seray Cetin"
+date: "30.11.2019"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Inhalt des Projekts
+Im Rahmen unseres Projekts haben wir den Bedarf von Defibrillatoren in den Wiener Gemeindebezirken heute und in 20 Jahren abgeschätzt. Hierbei haben wir die Anzahl der Defibrillatoren und deren Verteilung über das Wiener Stadtgebiet, dem Anteil von Personen über 60 Jahren in den jeweiligen Wiener Stadtbezirken gegenübergestellt. Ziel der Untersuchung ist den Bedarf nach Defibrillatoren und auch die Frage nach der ausreichenden Versorgung der alternden Bevölkerung abzuschätzen.
+
+## Verwendete Datensätze
+Wir haben für das vorliegende Projekt zwei Datensätze von OpenData Österreich und einen Datensatz der Statistik Austria verwendet. Von OpenData wurden die Shapefiles für die Wiener Gemeindebezirke sowie die Defibrillatoren (Standorte der Geräte in den Bezirken) verwendet. Von Statistik Austria wurden die Daten für die Beölkerungsprognose für die Jahre 2018-28 verwendet.
+
+Quellen der Datensätze:
+
+[Shapefile Wiener Bezirksgrenzen](https://www.data.gv.at/katalog/dataset/stadt-wien_bezirksgrenzenwien)
+
+[Shapefile Defibrillatoren](https://www.data.gv.at/katalog/dataset/stadt-wien_defibrillatorenstandortewien/resource/873612b1-7760-413b-9e04-f07d8085563b)
+
+[Bevölkerungsdaten](https://www.data.gv.at/katalog/dataset/32b03b8c-e860-4416-a433-fab84cb935a6)
+
+## Libraries
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)    # erforderlich für die Joins der Datensätze
+library(sf)           # für die Verarbeitung der Shapefiles erforderlich
+library(tmap)         # für Plots notwendig
+library(stringr)      # Bezirksnummer bearbeiten
+```
+
+## Datensätze
+### Wien
+Die nachstehende Grafik zeigt die 23 Wiener Gemeindebezirke. Zur Orientierung werden die Bezirksnummern angezeigt. 
+```{r}
+wien <- st_read(dsn = "Daten/BEZIRKSGRENZEOGD/BEZIRKSGRENZEOGDPolygon.shp")
+tm_shape(wien) + tm_borders() + tm_text("BEZ_RZ")
+```
+
+### Defibrillator
+Die folgende Grafik zeigt die Standorte der Defibrillatoren im Wiener Stadtgebiet. Man kann bereits hier erkennen, dass es eine starke Konzentration im ersten Bezirk sowie den Bezirken innerhalb des Gürtels gibt. Die Flächenbezirke östlich der Donau erscheinen unterversorgt. 
+```{r}
+defi <- st_read(dsn = "Daten/DEFIBRILLATORoGD/DEFIBRILLATORoGDPoint.shp")
+```
+
+Verteilungen der Defibrillatoren aktuell in Wien:
+
+```{r}
+a <- tm_shape(wien)
+a <- a + tm_borders() 
+a <- a + tm_shape(defi) + tm_dots(col='blue') 
+a
+```
+
+### Bevölkerung
+Als nächsten Schritt lesen wir die Bevölkerungsdaten ein und bereinigen den Datensatz um die nicht benötigten Spalten. FÜr unsere weitere Arbeit benötigen wir die Nummer des Bezirks, diese müssen wir zuerst aus der Gemeindekennziffer auslesen. Die Gemeindekennziffer wird von der Statistik Austria für alle österreichischen Gemeinden vergeben. Die 1. Stelle der Gemeindekennziffer bildet das Bundesland ab, die ersten 3 Stellen sind ident mit der Politischen Bezirkskennziffer (Quelle: [Statistik Austria](https://www.statistik.at/web_de/klassifikationen/regionale_gliederungen/gemeinden/index.html)). Diese Kennziffer kann verwendet werden um z.B. in CRM Systemen Adressen der korrekten Gemeinde zuzuordnen. 
+```{r}
+# Bevölkerunganzahl einlesen
+# erste zeile nicht einlesen und header übernehmen
+bev = read.csv("Daten/vie_303.csv", sep=";", skip = 1, header = TRUE)
+bev <- bev[which(bev$REF_DATE == 20190101),]  # nur die aus 2019!
+```
+
+```{r}
+# bezirksnummer aus district code (=Gemeindekennziffer) auslesen
+# zuerst führende neun löschen, dann letzte beiden stellen löschen
+bev$DISTRICT_CODE <- gsub("^9", "", bev$DISTRICT_CODE)
+bev$DISTRICT_CODE <- str_sub(bev$DISTRICT_CODE, 1, str_length(bev$DISTRICT_CODE)-2)
+```
+
+```{r}
+# bevölkerungsdaten um nicht benötigte spalten bereinigen
+bev <- bev[ , names(bev) %in% c("DISTRICT_CODE","AGE_00_02","AGE_03_05","AGE_06_09","AGE_10_14","AGE_15_19","AGE_20_24","AGE_25_29","AGE_30_44","AGE_45_59","AGE_60_74","AGE_75.")]
+```
+
+
+## Analyse der Daten
+Für die Analyse der Daten sollen die Bevölkerungsdaten mit dem Shapefile von Wien gejoined werden. Hierzu bringen wir die Daten in das passende Format (numeric). Zudem summieren wir die Bevölkerungszahlen auf Bezirksebene auf. Im ursprünglichen Datensatz waren die Bevölkerungsdaten auf Basis der Subbezirke (Zählbezirke für die Volkszählung) gegeben. Wir müssen diese Daten daher zuerst auf Ebene der Wiener Gemeindebezirke bringen.
+```{r}
+# bezirksnummer in numeric für join 
+wien$BEZ = as.numeric(wien$BEZ)
+bev$DISTRICT_CODE = as.numeric(bev$DISTRICT_CODE)
+```
+
+```{r}
+# groupby um werte von subbezirken auf bezirke aufzusummieren
+bev_bez <- aggregate(.~bev$DISTRICT_CODE, bev, sum)
+# spalte DISTRICT_CODE bereinigen
+bev_bez = subset(bev_bez, select = -c(DISTRICT_CODE))
+```
+
+## Methodik
+Für unsere Analyse gehen wir von einem verstärkten Bedarf von Personen über 60 Jahren aus und betrachten daher für unsere Bedarfsanalyse nur diese Personengruppe. Als Basis für diese Annahme dienen die Informationen auf der Webseite des Robert Koch Instituts. In der folgenden Grafik werden die Anteile der Personen mit Herzerkrankungen an der gleichaltrigen Bevölkerung dargestellt:
+
+![Herzerkrankungen Robert Koch Institut](Daten/InfografikHKK.jpg "Herzerkrankungen")
+
+Quelle: [Robert Koch Institut](https://www.rki.de/DE/Content/Gesundheitsmonitoring/Themen/Chronische_Erkrankungen/HKK/HKK_node.html)
+
+Der Anteil der Betroffenen ist bei Personen über 60 Jahren deutlich erhöht, daher haben wir für unsere Analyse diese Bevölkerungsgruppe als Personengruppe mit dem höchsten Bedarf definiert. Als nächsten Schritt berechnen wir den Anteil der über 60 jährigen pro Bezirk und joinen die Bevölkerungsdaten mit dem Shapefile für Wien. 
+
+```{r}
+# prozentualer anteil von personen über 60 Jahren = hauptbetroffene von herzinfarkten
+bev_bez["gesamtBev"] <- rowSums(bev_bez [,-1])
+bev_bez["Anteilueber60"] <- round((bev_bez$AGE_60_74 + bev_bez$AGE_75.) / bev_bez$gesamtBev,2)
+```
+
+
+```{r}
+# join wien und bev_bez mit der bezirksnummer
+wien_bev_merge = wien %>% left_join(bev_bez, by = c("BEZ" = "bev$DISTRICT_CODE"))
+wien_bev_merge
+```
+
+### Bedarf 2019
+Die nachstehende Grafik zeigt den Anteil der über 60 jährigen Personen pro Gemeindebezirk und die Verteilung der Defibrillatoren über die Bezirke. Dunkler hervorgehobene Bezirke sind Regionen mit höherem Anteil von älteren Personen. Aus dieser Grafik kann man erkennen, dass die Bezirke 13, 14, 19 und 23 auch dann unterversorgt sind, wenn man die großen Grünflächen des Wienerwalds berücksichtigt. Der erste Bezirk erscheint hingegen überversorgt. Allerdings muss man hierbei anmerken dass nicht alle Defibrillatoren in diese Liste eingemeldet werden und v.a. in Unternehmen noch eine große Anzahl weiterere Geräte zur Verfügung steht. Wir haben uns für eine Darstellung der Bevölkerungsanteile in erdfarben und eine Hervorhebung der Defi-Standorte in blauer Farbe entschieden um die Aufmerksamkeit des Betrachters auf die für uns zentrale Information zu lenken.
+
+```{r}
+# plotten des bevölkerungsanteils der über 60 jährigen in den wiener bezirken gemeinsam
+# mit den defi-standorten
+a <- tm_shape(wien_bev_merge) + tm_fill(col = "Anteilueber60", palette = c("#f2ce7a", "#973738"), title = "Anteil über 60 jährige")
+a <- a + tm_borders()
+a <- a + tm_shape(defi) + tm_dots(col='blue')
+a <- a + tm_legend(title = 'Bedarf 2019')
+a
+```
+
+### Bedarf 2039
+Für die folgende Grafik haben wir den Bevölkerungsanteil der über 60 jährigen in zwanzig Jahren prognostiziert. Nachdem wir keine Demographen sind und das Projekt nicht wissenschaftlichen Maßstäben gehorchen muss, haben wir uns für eine einfache Methodik entschieden: Wir berechnen den Bevölkerungsanteil auf Basis der heute 30 bis 60 jährigen sowie 40% der heute 60 bis 74 jährigen. D.h. wir nehmen an dass 40% der heute 60-74 jährigen ein hohes Alter erreichen werden. Auch berücksichtigen wir die Wanderungsbewegungen innerhalb Wiens sowie die Zu- und Abwanderung dadurch, dass wir 100% der heute 30-60 jährigen in die Prognose in 20 Jahren mit aufnehmen. Von den so ermittelten Bevölkerungszahlen pro Bezirk berechnen wir wieder den Anteil an der Gesamtbevölkerung. D.h. unsere Prognose berücksichtigt das für Wien vorhergesagte zusätzliche Bevölkerungswachstum nur unzureichend.
+
+Da wir die Bevölkerungskohorte der 30-44 jährigen in unserem Datensatz vorliegen und wir diese Bevölkerungskohorte für die Prognose nicht in die 30-39 jährigen und die 40-44 jährigen trennen, haben wir auch hier aus Vereinfachungsgründen eine Unschärfe "eingebaut". Somit prognostizieren wir den Anteil der über 50 jährigen in 20 Jahren. Nachdem Herz-Kreislauferkrankungen in den meisten Industrieländern ein zentrales Thema sind und gerade bei Frauen und jüngeren Personen Herzinfarkte oft "überraschend" auftreten, ist diese Unschärfe aus unserer Sicht vertretbar.
+
+Auch gehen wir in unserer Analyse von einer gleichbleibenden Anzahl und Verteilung der Defibrillatoren aus.
+
+```{r}
+# anteil der potentiell betroffenen bevölkerungsgruppe in 20 jahren
+# dh heute 30-60 jährige, von den heute 60-74 jährigen erreichen 40% ein hohes alter
+wien_bev_merge["anteil20j"] <- round((wien_bev_merge$AGE_30_44 + wien_bev_merge$AGE_45_59 + (0.4 * wien_bev_merge$AGE_60_74)) / wien_bev_merge$gesamtBev,3)
+
+```
+
+```{r}
+# plotten der bevölkerungsanteile pro bezirk und der defi-standorte
+b <- tm_shape(wien_bev_merge) + tm_fill(col = "anteil20j", palette = c("#f2ce7a", "#973738"), title = "Anteil über 50 jährige")  # palette = "RdBu"
+b <- b + tm_borders()
+b <- b + tm_shape(defi) + tm_dots(col='blue')
+b <- b + tm_legend(title = 'Prognose Bedarf 2039')
+b
+```
+

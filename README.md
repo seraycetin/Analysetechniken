@@ -7,7 +7,7 @@ Im Rahmen unseres Projekts haben wir den Bedarf von Defibrillatoren in den Wiene
 ## Verwendete Datensätze
 Wir haben für das vorliegende Projekt zwei Datensätze von OpenData Österreich und einen Datensatz der Statistik Austria verwendet. Von OpenData wurden die Shapefiles für die Wiener Gemeindebezirke sowie die Defibrillatoren (Standorte der Geräte in den Bezirken) verwendet. Von Statistik Austria wurden die Daten für die Beölkerungsprognose für die Jahre 2018-28 verwendet.
 
-### Quellen der Datensätze:
+### Links zu den Datensätzen:
 
 * [Shapefile Wiener Bezirksgrenzen](https://www.data.gv.at/katalog/dataset/stadt-wien_bezirksgrenzenwien)
 * [Shapefile Defibrillatoren](https://www.data.gv.at/katalog/dataset/stadt-wien_defibrillatorenstandortewien/resource/873612b1-7760-413b-9e04-f07d8085563b)
